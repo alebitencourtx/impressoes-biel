@@ -762,6 +762,12 @@ body.exporting .margin-guide { display: none !important; }
     box-shadow: none !important;
     margin: 0 auto;
   }
+  /* esconde alças de seleção/rotação/corte na impressão */
+  .item__handle,
+  .item__handle--rot,
+  .crop-handle,
+  .item.is-selected::before,
+  .item.is-selected::after { display: none !important; }
 }
 
 </style>
@@ -3397,11 +3403,7 @@ function bindControls() {
     save();
   });
 
-  el.deletePhotoBtn.addEventListener('click', () => {
-    const it = selected();
-    if (!it || it.type !== 'photo') return;
-    removeSelected();
-  });
+  el.deletePhotoBtn.addEventListener('click', removeSelected);
 
   el.rotateSlider.addEventListener('input', () => {
     const it = selected(); if (!it) return;
