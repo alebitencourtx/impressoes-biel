@@ -2271,9 +2271,8 @@ function paintItem(node, it) {
     if (it.type === 'sticker') img.className = 'sticker-img';
     applyCrop(img, it);
     if (it.type === 'sticker') {
-      const c = it.crop || {};
-      const cropped = !!(c.t || c.r || c.b || c.l);
-      img.style.transform = cropped ? 'none' : 'scale(1.35)';
+      // Sem scale: object-fit: contain no CSS já preenche a caixa sem cortar
+      img.style.transform = 'none';
     }
     content.appendChild(img);
   } else {
