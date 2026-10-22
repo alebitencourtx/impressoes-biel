@@ -13,3 +13,7 @@ diff_clean.txt
 
 # figurinhas PNG originais (o app usa base64 WebP no index.html)
 img/stickers/
+
+# pranchas de origem (entrada do recorte; não vão para o app)
+img/sources/*
+!img/sources/LEIA-ME.md
