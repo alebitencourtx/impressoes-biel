@@ -6,3 +6,10 @@
 .DS_Store
 Thumbs.db
 *.log
+
+# arquivos temporarios / logs de debug
+diff.txt
+diff_clean.txt
+
+# figurinhas PNG originais (o app usa base64 WebP no index.html)
+img/stickers/
