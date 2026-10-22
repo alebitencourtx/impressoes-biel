@@ -197,9 +197,10 @@ html, body {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  /* Os recortes Patchwork mantêm o fundo quadrado da prancha. Aproximamos o
-     desenho para ele ocupar melhor a caixa e crescer visualmente como emoji. */
-  transform: scale(1.35);
+  /* Sem scale: o scale(1.35) fazia a imagem transbordar a caixa e, como o
+     .item__content tem overflow: hidden, as bordas eram cortadas. Com
+     object-fit: contain e imagem quadrada (360x360), a figura já preenche
+     a caixa inteira sem cortar nada. */
 }
 
 .text-box {
