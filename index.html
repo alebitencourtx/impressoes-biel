@@ -899,6 +899,9 @@ body.exporting .margin-guide { display: none !important; }
         <button id="mirrorBtn" class="small secondary" type="button" aria-pressed="false">↔️ Espelhar</button>
       </div>
       <div class="control-group">
+        <button id="deletePhotoBtn" class="small secondary" type="button">🗑️ Apagar foto</button>
+      </div>
+      <div class="control-group">
         <div class="slider-container">
           <label>Girar:</label>
           <input type="range" id="rotateSlider" min="0" max="360" value="0">
@@ -1962,6 +1965,7 @@ const el = {
   applyCropBtn: $('applyCropBtn'),
   cancelCropBtn: $('cancelCropBtn'),
   mirrorBtn: $('mirrorBtn'),
+  deletePhotoBtn: $('deletePhotoBtn'),
   rotateSlider: $('rotateSlider'),
   rotateValue: $('rotateValue'),
 
@@ -2329,6 +2333,7 @@ function startCropEdit() {
   node.classList.add('is-cropping');
   el.rotateSlider.disabled = true;
   el.mirrorBtn.disabled = true;
+  el.deletePhotoBtn.disabled = true;
 
   const overlay = document.createElement('div');
   overlay.className = 'crop-overlay';
@@ -2404,6 +2409,7 @@ function finishCropEdit(apply) {
   el.cropEditActions.hidden = true;
   el.rotateSlider.disabled = false;
   el.mirrorBtn.disabled = false;
+  el.deletePhotoBtn.disabled = false;
   renderAll();
   if (it) syncPhotoPanel(it);
   if (apply) save();
@@ -3406,6 +3412,12 @@ function bindControls() {
     refreshItem(it);
     syncPhotoPanel(it);
     save();
+  });
+
+  el.deletePhotoBtn.addEventListener('click', () => {
+    const it = selected();
+    if (!it || it.type !== 'photo') return;
+    removeSelected();
   });
 
   el.rotateSlider.addEventListener('input', () => {
