@@ -1,0 +1,8 @@
+# pastas internas do app / backups do editor
+.base/
+.polydev/
+
+# sistema
+.DS_Store
+Thumbs.db
+*.log

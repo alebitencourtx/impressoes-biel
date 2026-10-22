@@ -2046,6 +2046,79 @@ function makeItemNode(it) {
   return node;
 }
 
+/* ===== tamanho do emoji =====
+   A figurinha Patchwork é uma <img> com object-fit:contain, então cresce
+   sozinha com a caixa. O emoji é TEXTO: o tamanho vem do font-size. Por isso
+   medimos a TINTA real do glifo (canvas.measureText) e calculamos a fonte que
+   faz o desenho preencher a caixa igual à figurinha — vale para qualquer
+   plataforma/fonte de emoji, sem fator chutado. */
+const EMOJI_STACK = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+const EMOJI_SAFE = 0.995;             // meio pixel de respiro: enche a caixa como a figurinha
+const emojiMetrics = new Map();       // char -> métricas (proporção de 1em)
+let emojiMeasureCtx = null;
+
+function measureEmoji(ch) {
+  if (emojiMetrics.has(ch)) return emojiMetrics.get(ch);
+  // Reserva: glifo quadrado de 1em centrado na linha.
+  let m = { inkW: 1, inkH: 1, asc: 0.88, desc: 0.12, inkAsc: 0.88, inkDesc: 0.12, exact: false };
+  try {
+    if (!emojiMeasureCtx) {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 8;
+      emojiMeasureCtx = cv.getContext('2d');
+    }
+    const REF = 100;
+    emojiMeasureCtx.font = `${REF}px ${EMOJI_STACK}`;
+    const t = emojiMeasureCtx.measureText(ch);
+    const inkW = t.actualBoundingBoxLeft + t.actualBoundingBoxRight;
+    const inkH = t.actualBoundingBoxAscent + t.actualBoundingBoxDescent;
+    if (inkW > 0 && inkH > 0) {
+      const A = Number.isFinite(t.fontBoundingBoxAscent) ? t.fontBoundingBoxAscent : REF * 0.88;
+      const D = Number.isFinite(t.fontBoundingBoxDescent) ? t.fontBoundingBoxDescent : REF * 0.12;
+      m = {
+        inkW: inkW / REF,
+        inkH: inkH / REF,
+        asc: A / REF,
+        desc: D / REF,
+        inkAsc: t.actualBoundingBoxAscent / REF,
+        inkDesc: t.actualBoundingBoxDescent / REF,
+        exact: true
+      };
+    }
+  } catch (_) { /* segue na reserva */ }
+  emojiMetrics.set(ch, m);
+  return m;
+}
+
+/* Fonte em mm que enche a caixa (contain, como a figurinha) + correção
+   vertical em mm para a tinta do glifo ficar centralizada na caixa. */
+function emojiFit(it) {
+  const w = Math.max(0.5, Number(it.w) || 8);
+  const h = Math.max(0.5, Number(it.h) || 8);
+  const m = measureEmoji(it.text || '🙂');
+  const fs = clamp(Math.min(w / m.inkW, h / m.inkH) * EMOJI_SAFE, 0.5, 900);
+  let dy = 0;
+  if (m.exact) {
+    const A = m.asc * fs;
+    const D = m.desc * fs;
+    const baseline = (fs - (A + D)) / 2 + A;                    // line-height: 1
+    const inkCenter = baseline - ((m.inkAsc - m.inkDesc) * fs) / 2;
+    dy = clamp(fs / 2 - inkCenter, -fs * 0.2, fs * 0.2);
+  }
+  return { fs: round2(fs), dy: round2(dy) };
+}
+
+/* Reaplica só o tamanho do emoji (sem recriar o nó) — usado no arrasto. */
+function paintEmojiFont(node, it) {
+  if (it.type !== 'sticker' || it.src) return;
+  const box = node.querySelector('.emoji-box');
+  if (!box) return;
+  const fit = emojiFit(it);
+  const size = fit.fs + 'mm';
+  if (box.style.fontSize !== size) box.style.fontSize = size;
+  box.style.transform = fit.dy ? `translateY(${fit.dy}mm)` : '';
+}
+
 function paintGeometry(node, it) {
   node.style.left = it.x + 'mm';
   node.style.top = it.y + 'mm';
@@ -2060,6 +2133,9 @@ function paintGeometry(node, it) {
   } else {
     node.style.border = 'none';
   }
+
+  // O emoji acompanha a caixa no mesmo gesto (a figurinha PNG já acompanha via CSS).
+  paintEmojiFont(node, it);
 }
 
 function paintItem(node, it) {
@@ -2086,11 +2162,12 @@ function paintItem(node, it) {
     const box = document.createElement('div');
     box.className = it.type === 'sticker' ? 'text-box emoji-box' : 'text-box';
     box.textContent = it.text;
-    box.style.fontSize = (it.fontSize || 8) + (it.type === 'sticker' ? 'px' : 'mm');
+    box.style.fontSize = (it.type === 'sticker' ? emojiFit(it).fs : (it.fontSize || 8)) + 'mm';
     box.style.color = it.color || '#1B5E20';
     box.style.fontWeight = it.bold ? '700' : '400';
     box.style.fontStyle = it.italic ? 'italic' : 'normal';
     content.appendChild(box);
+    if (it.type === 'sticker') paintEmojiFont(node, it);   // centraliza a tinta do glifo
   }
 }
 
@@ -2415,11 +2492,8 @@ function resizeProportional(st, dx, dy) {
   it.h = nh;
   it.x = cx - nw / 2;
   it.y = cy - nh / 2;
-
-  // Adesivo de emoji escala a fonte junto; a figurinha PNG acompanha a caixa.
-  if (it.type === 'sticker' && !it.src) {
-    it.fontSize = round2(clamp((st.font || 76) * s, 12, 300));
-  }
+  // Emoji não precisa de nada aqui: emojiFit() deriva a fonte de w/h,
+  // então o glifo acompanha a caixa no mesmo gesto.
 }
 
 function showRotationGuide(it) {
@@ -2733,9 +2807,7 @@ function addSticker(char) {
     w: round2(size),
     h: round2(size),
     rot: 0,
-    flipX: false,
-    fontSize: 76,                            // px, como no original
-    fu: 'px'
+    flipX: false
   });
 }
 
@@ -2815,11 +2887,13 @@ function load() {
     state.pageSize = PAGE_SIZES[data.pageSize] ? data.pageSize : 'a4';
     state.bg = { ...state.bg, ...(data.bg || {}) };
     state.items = data.items.map((it, i) => ({ ...it, hidden: false, z: it.z || i + 1 }));
-    // adesivos antigos tinham fonte em mm; o original usa px
+    // O tamanho do emoji agora vem da caixa (w/h): descarta os campos antigos
+    // de fonte para ele já aparecer preenchendo o quadrado como a figurinha.
     state.items.forEach((it) => {
-      if (it.type === 'sticker' && !it.src && it.fu !== 'px') {
-        it.fontSize = round2((Number(it.fontSize) || 8) * (96 / 25.4));
-        it.fu = 'px';
+      if (it.type === 'sticker' && !it.src) {
+        delete it.fsRatio;
+        delete it.fu;
+        delete it.fontSize;
       }
     });
     state.items.forEach(applySafeLayout);   // estados antigos também respeitam a trava
