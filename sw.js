@@ -3,7 +3,7 @@
    a versão mais nova; o cache só é usado quando não há internet (offline).
    Antes era cache-first: por isso "recarregar" continuava mostrando a versão velha. */
 
-const CACHE_NAME = 'impressao-biel-v8';
+const CACHE_NAME = 'impressao-biel-v9';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', event => {
