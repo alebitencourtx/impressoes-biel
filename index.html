@@ -2054,6 +2054,7 @@ function makeItemNode(it) {
    plataforma/fonte de emoji, sem fator chutado. */
 const EMOJI_STACK = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
 const EMOJI_SAFE = 0.995;             // meio pixel de respiro: enche a caixa como a figurinha
+const PATCHWORK_SCALE = 1.35;          // a figurinha Patchwork recebe scale(1.35); o emoji iguala o tamanho total
 const emojiMetrics = new Map();       // char -> métricas (proporção de 1em)
 let emojiMeasureCtx = null;
 
@@ -2096,7 +2097,7 @@ function emojiFit(it) {
   const w = Math.max(0.5, Number(it.w) || 8);
   const h = Math.max(0.5, Number(it.h) || 8);
   const m = measureEmoji(it.text || '🙂');
-  const fs = clamp(Math.min(w / m.inkW, h / m.inkH) * EMOJI_SAFE, 0.5, 900);
+   const fs = clamp(Math.min(w / m.inkW, h / m.inkH) * EMOJI_SAFE * PATCHWORK_SCALE, 0.5, 900);
   let dy = 0;
   if (m.exact) {
     const A = m.asc * fs;
