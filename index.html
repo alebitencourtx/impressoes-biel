@@ -831,53 +831,7 @@ body.exporting .margin-guide { display: none !important; }
       </div>
     </section>
 
-    <section class="control-section" data-panel="background">
-      <h3>🎨 Fundo</h3>
-      <div class="control-group">
-        <label>Tipo</label>
-        <select id="bgType">
-          <option value="none">Sem fundo (branco)</option>
-          <option value="image">Imagem</option>
-          <option value="solid">Cor sólida</option>
-          <option value="gradient">Degradê</option>
-        </select>
-      </div>
-
-      <div class="control-group" id="bgImageControls" hidden>
-        <input type="file" id="bgImageInput" accept="image/*" hidden>
-        <button id="bgImageBtn">🏞️ Escolher Imagem</button>
-      </div>
-
-      <div class="control-group" id="bgSolidControls" hidden>
-        <label>Cor sólida</label>
-        <div class="color-picker-container">
-          <input type="color" id="bgSolid" value="#F1F8E9">
-          <div class="color-preview" id="bgSolidPreview" style="background:#F1F8E9"></div>
-        </div>
-      </div>
-
-      <div class="control-group" id="bgGradientControls" hidden>
-        <label>Degradê 1</label>
-        <div class="color-picker-container">
-          <input type="color" id="bgGrad1" value="#A5D6A7">
-          <div class="color-preview" id="bgGradPreview1" style="background:#A5D6A7"></div>
-        </div>
-        <label>Degradê 2</label>
-        <div class="color-picker-container">
-          <input type="color" id="bgGrad2" value="#2E7D32">
-          <div class="color-preview" id="bgGradPreview2" style="background:#2E7D32"></div>
-        </div>
-        <label>Direção</label>
-        <select id="bgGradDir">
-          <option value="to right">→ Da esquerda para a direita</option>
-          <option value="to bottom">↓ De cima para baixo</option>
-          <option value="45deg">↗ Diagonal 45°</option>
-          <option value="135deg">↖ Diagonal 135°</option>
-        </select>
-        <div class="gradient-preview" id="gradientPreview"></div>
-      </div>
-    </section>
-
+    
     <section class="control-section" data-panel="layout">
       <h3>📄 Página e Layout</h3>
       <div class="control-group">
@@ -2080,28 +2034,13 @@ function applySafeLayout(it) {
 /* ============================ fundo ============================ */
 
 function applyBackground() {
-  const bg = state.bg;
-  el.bgOverlay.style.display = 'none';
-  el.bgOverlay.style.backgroundImage = 'none';
-  el.bgOverlay.style.background = 'transparent';
-
-  if (bg.type === 'image' && bg.image) {
-    el.bgOverlay.style.display = 'block';
-    el.bgOverlay.style.backgroundImage = `url("${bg.image}")`;
-    el.bgOverlay.style.backgroundSize = 'cover';
-    el.bgOverlay.style.backgroundPosition = 'center';
-  } else if (bg.type === 'solid') {
-    el.bgOverlay.style.display = 'block';
-    el.bgOverlay.style.background = bg.solid;
-  } else if (bg.type === 'gradient') {
-    el.bgOverlay.style.display = 'block';
-    el.bgOverlay.style.background = `linear-gradient(${bg.dir}, ${bg.c1}, ${bg.c2})`;
+  // Fundo sempre branco.
+  el.page.style.background = '#ffffff';
+  if (el.bgOverlay) {
+    el.bgOverlay.style.display = 'none';
+    el.bgOverlay.style.backgroundImage = 'none';
+    el.bgOverlay.style.background = 'transparent';
   }
-
-  el.bgImageControls.hidden = bg.type !== 'image';
-  el.bgSolidControls.hidden = bg.type !== 'solid';
-  el.bgGradientControls.hidden = bg.type !== 'gradient';
-  updateGradientPreview();
 }
 
 function updateGradientPreview() {
