@@ -2049,40 +2049,59 @@ function makeItemNode(it) {
 /* ===== tamanho do emoji =====
    A figurinha Patchwork é uma <img> com object-fit:contain, então cresce
    sozinha com a caixa. O emoji é TEXTO: o tamanho vem do font-size. Por isso
-   medimos a TINTA real do glifo (canvas.measureText) e calculamos a fonte que
-   faz o desenho preencher a caixa igual à figurinha — vale para qualquer
-   plataforma/fonte de emoji, sem fator chutado. */
+   medimos a TINTA REAL do glifo (desenhando num canvas e varrendo os pixels
+   pintados) e calculamos a fonte que faz o desenho preencher a caixa sem
+   estourar — vale para qualquer plataforma/fonte de emoji, sem fator chutado.
+   Dois cuidados:
+   - measureText() NÃO serve: em fontes de emoji devolve uma "caixa" quadrada
+     (1.18em) em vez da tinta pintada.
+   - o texto é centralizado pelo ADVANCE (caixa da fonte), e a tinta do emoji
+     é assimétrica (o 🐶 vaza ~0,08em à direita). Por isso medimos a tinta em
+     relação à origem do texto e corrigimos com translate(dx, dy). */
 const EMOJI_STACK = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-const EMOJI_SAFE = 0.995;             // meio pixel de respiro: enche a caixa como a figurinha
-const PATCHWORK_SCALE = 1.35;          // a figurinha Patchwork recebe scale(1.35); o emoji iguala o tamanho total
+const EMOJI_SAFE = 0.98;               // respiro de 2%: a tinta preenche a caixa sem ser cortada
 const emojiMetrics = new Map();       // char -> métricas (proporção de 1em)
 let emojiMeasureCtx = null;
 
 function measureEmoji(ch) {
   if (emojiMetrics.has(ch)) return emojiMetrics.get(ch);
   // Reserva: glifo quadrado de 1em centrado na linha.
-  let m = { inkW: 1, inkH: 1, asc: 0.88, desc: 0.12, inkAsc: 0.88, inkDesc: 0.12, exact: false };
+  let m = { inkL: 0, inkR: 1, inkTop: 0.88, inkBottom: 0.12, adv: 1, asc: 0.88, desc: 0.12, exact: false };
   try {
-    if (!emojiMeasureCtx) {
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = 8;
-      emojiMeasureCtx = cv.getContext('2d');
-    }
     const REF = 100;
-    emojiMeasureCtx.font = `${REF}px ${EMOJI_STACK}`;
-    const t = emojiMeasureCtx.measureText(ch);
-    const inkW = t.actualBoundingBoxLeft + t.actualBoundingBoxRight;
-    const inkH = t.actualBoundingBoxAscent + t.actualBoundingBoxDescent;
-    if (inkW > 0 && inkH > 0) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = REF * 4;              // espaço de sobra: o glifo nunca encosta na borda
+    const g = cv.getContext('2d');
+    g.font = `${REF}px ${EMOJI_STACK}`;
+    g.textBaseline = 'alphabetic';
+    g.textAlign = 'left';
+    g.fillText(ch, REF * 2, REF * 2);            // origem do texto em x=200, baseline em y=200
+    const d = g.getImageData(0, 0, cv.width, cv.height).data;
+    let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+    for (let y = 0; y < cv.height; y++) {
+      for (let x = 0; x < cv.width; x++) {
+        if (d[(y * cv.width + x) * 4 + 3] > 10) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    if (x1 >= x0 && y1 >= y0) {
+      if (!emojiMeasureCtx) emojiMeasureCtx = document.createElement('canvas').getContext('2d');
+      emojiMeasureCtx.font = `${REF}px ${EMOJI_STACK}`;
+      const t = emojiMeasureCtx.measureText(ch);
       const A = Number.isFinite(t.fontBoundingBoxAscent) ? t.fontBoundingBoxAscent : REF * 0.88;
       const D = Number.isFinite(t.fontBoundingBoxDescent) ? t.fontBoundingBoxDescent : REF * 0.12;
       m = {
-        inkW: inkW / REF,
-        inkH: inkH / REF,
+        inkL: (x0 - REF * 2) / REF,              // tinta à esquerda da origem do texto
+        inkR: (x1 + 1 - REF * 2) / REF,           // tinta à direita da origem do texto
+        inkTop: (REF * 2 - y0) / REF,             // tinta acima da baseline
+        inkBottom: (y1 - REF * 2 + 1) / REF,      // tinta abaixo da baseline
+        adv: (t.width || REF) / REF,             // avanço (o que o flex centraliza)
         asc: A / REF,
         desc: D / REF,
-        inkAsc: t.actualBoundingBoxAscent / REF,
-        inkDesc: t.actualBoundingBoxDescent / REF,
         exact: true
       };
     }
@@ -2091,22 +2110,29 @@ function measureEmoji(ch) {
   return m;
 }
 
-/* Fonte em mm que enche a caixa (contain, como a figurinha) + correção
-   vertical em mm para a tinta do glifo ficar centralizada na caixa. */
+/* Fonte em mm que enche a caixa (contain, como a figurinha) + correções
+   dx/dy em mm para a TINTA do glifo ficar centralizada na caixa. */
 function emojiFit(it) {
   const w = Math.max(0.5, Number(it.w) || 8);
   const h = Math.max(0.5, Number(it.h) || 8);
   const m = measureEmoji(it.text || '🙂');
-   const fs = clamp(Math.min(w / m.inkW, h / m.inkH) * EMOJI_SAFE * PATCHWORK_SCALE, 0.5, 900);
-  let dy = 0;
+  const inkW = Math.max(0.01, m.inkR - m.inkL);
+  const inkH = Math.max(0.01, m.inkTop + m.inkBottom);
+  const fs = clamp(Math.min(w / inkW, h / inkH) * EMOJI_SAFE, 0.5, 900);
+  let dx = 0, dy = 0;
   if (m.exact) {
+    // horizontal: o flex centraliza o ADVANCE dentro da caixa
+    const penX = w / 2 - (m.adv * fs) / 2;
+    const inkCenterX = penX + ((m.inkL + m.inkR) / 2) * fs;
+    dx = w / 2 - inkCenterX;
+    // vertical: a linha (line-height 1) é centralizada na caixa
     const A = m.asc * fs;
     const D = m.desc * fs;
-    const baseline = (fs - (A + D)) / 2 + A;                    // line-height: 1
-    const inkCenter = baseline - ((m.inkAsc - m.inkDesc) * fs) / 2;
-    dy = clamp(fs / 2 - inkCenter, -fs * 0.2, fs * 0.2);
+    const baseline = (h - fs) / 2 + (fs - (A + D)) / 2 + A;
+    const inkCenterY = baseline - ((m.inkTop - m.inkBottom) / 2) * fs;
+    dy = h / 2 - inkCenterY;
   }
-  return { fs: round2(fs), dy: round2(dy) };
+  return { fs: round2(fs), dx: round2(dx), dy: round2(dy) };
 }
 
 /* Reaplica só o tamanho do emoji (sem recriar o nó) — usado no arrasto. */
@@ -2117,7 +2143,10 @@ function paintEmojiFont(node, it) {
   const fit = emojiFit(it);
   const size = fit.fs + 'mm';
   if (box.style.fontSize !== size) box.style.fontSize = size;
-  box.style.transform = fit.dy ? `translateY(${fit.dy}mm)` : '';
+  const tx = fit.dx ? fit.dx + 'mm' : '0mm';
+  const ty = fit.dy ? fit.dy + 'mm' : '0mm';
+  const tf = `translate(${tx}, ${ty})`;
+  if (box.style.transform !== tf) box.style.transform = tf;
 }
 
 function paintGeometry(node, it) {
