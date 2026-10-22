@@ -216,12 +216,12 @@ html, body {
   padding: .5mm;
 }
 
-/* Alças — menores (30 px) com área de toque maior (24 px de raio no JS).
+/* Alças — 38 px (rotação: 42 px) com área de toque maior (30 px de raio no JS).
    Invisíveis e sem captura de toque enquanto o item não está selecionado. */
 .item__handle {
   position: absolute;
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -237,24 +237,26 @@ html, body {
 }
 .item__handle::after {
   content: '';
-  width: 10px;
-  height: 10px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   background: #fff;
 }
 .item.is-selected .item__handle { opacity: .95; pointer-events: all; }
 .item__handle:active { background: rgba(46, 125, 50, 1); }
 
-.item__handle[data-h="nw"] { top: -15px; left: -15px; cursor: nwse-resize; }
-.item__handle[data-h="ne"] { top: -15px; right: -15px; cursor: nesw-resize; }
-.item__handle[data-h="sw"] { bottom: -15px; left: -15px; cursor: nesw-resize; }
-.item__handle[data-h="se"] { bottom: -15px; right: -15px; cursor: nwse-resize; }
+.item__handle[data-h="nw"] { top: -19px; left: -19px; cursor: nwse-resize; }
+.item__handle[data-h="ne"] { top: -19px; right: -19px; cursor: nesw-resize; }
+.item__handle[data-h="sw"] { bottom: -19px; left: -19px; cursor: nesw-resize; }
+.item__handle[data-h="se"] { bottom: -19px; right: -19px; cursor: nwse-resize; }
 
 /* Alça de girar (só foto/figurinha): fica acima do item e gira junto com ele */
 .item__handle--rot {
-  top: -46px;
+  top: -58px;
   left: 50%;
-  margin-left: -15px;
+  margin-left: -21px;
+  width: 42px;
+  height: 42px;
   background: #fff;
   cursor: grab;
 }
@@ -264,7 +266,7 @@ html, body {
   height: auto;
   background: none;
   color: var(--primary-color);
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1;
   font-weight: 700;
 }
@@ -2494,7 +2496,7 @@ function handleAt(node, clientX, clientY) {
   // Item não selecionado: o primeiro toque só seleciona/move, nunca redimensiona.
   if (!node.classList.contains('is-selected')) return null;
   const nr = node.getBoundingClientRect();
-  const hit = Math.min(24, Math.max(14, Math.min(nr.width, nr.height) / 3));
+  const hit = Math.min(30, Math.max(16, Math.min(nr.width, nr.height) / 3));
   let best = null;
   let bestDist = Infinity;
   node.querySelectorAll('.item__handle').forEach((h) => {
