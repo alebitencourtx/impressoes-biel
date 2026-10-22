@@ -336,6 +336,81 @@ function label(mask, w, h) {
 /* ------------------------- recorte + reamostragem ----------------------- */
 /* Bilinear com alfa PRÉ-MULTIPLICADO: sem franja branca nas bordas quando a
    figura é reduzida. */
+// Remove componentes soltos: mantém apenas o maior componente conectado (4-conectividade no alfa)
+function keepLargestComponent(buf, w, h, alphaThreshold) {
+  alphaThreshold = alphaThreshold || 10;
+  const n = w * h;
+  const visited = new Uint8Array(n);
+  const labels = new Int32Array(n);
+  let maxLabel = 0, maxCount = 0, maxLabelId = 0;
+
+  function idx(x, y) { return y * w + x; }
+
+  for (let i = 0; i < n; i++) {
+    if (visited[i]) continue;
+    const a = buf[i * 4 + 3];
+    if (a < alphaThreshold) { visited[i] = 1; continue; }
+    // BFS
+    const stack = [i];
+    visited[i] = 1;
+    const comp = [];
+    while (stack.length) {
+      const cur = stack.pop();
+      comp.push(cur);
+      const cx = cur % w, cy = Math.floor(cur / w);
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const ni = idx(nx, ny);
+        if (visited[ni]) continue;
+        if (buf[ni * 4 + 3] < alphaThreshold) continue;
+        visited[ni] = 1;
+        stack.push(ni);
+      }
+    }
+    maxLabel++;
+    if (comp.length > maxCount) { maxCount = comp.length; maxLabelId = maxLabel; }
+    for (const p of comp) labels[p] = maxLabel;
+  }
+
+  // Zerar alfa de tudo que não é do componente mais central (maior componente próximo do centro)
+  // Calcular centro de cada componente
+  const compCenters = {};
+  const compCounts = {};
+  for (let i = 0; i < n; i++) {
+    const lbl = labels[i];
+    if (lbl === 0) continue;
+    const cx = i % w, cy = Math.floor(i / w);
+    if (!compCenters[lbl]) { compCenters[lbl] = { x: 0, y: 0 }; compCounts[lbl] = 0; }
+    compCenters[lbl].x += cx;
+    compCenters[lbl].y += cy;
+    compCounts[lbl]++;
+  }
+  // Escolher componente cujo centro está mais próximo do centro da imagem
+  const imgCx = w / 2, imgCy = h / 2;
+  let bestLabel = 0, bestDist = Infinity;
+  for (const lbl in compCenters) {
+    const c = compCenters[lbl];
+    const cnt = compCounts[lbl];
+    const centerX = c.x / cnt, centerY = c.y / cnt;
+    const dist = Math.hypot(centerX - imgCx, centerY - imgCy);
+    // Preferir componentes maiores em caso de empate (distância similar)
+    const score = dist - cnt * 0.001;
+    if (score < bestDist) { bestDist = score; bestLabel = parseInt(lbl); }
+  }
+
+  // Zerar alfa de tudo que não é do componente central
+  for (let i = 0; i < n; i++) {
+    if (labels[i] !== bestLabel) {
+      buf[i * 4 + 3] = 0;
+      buf[i * 4] = 0;
+      buf[i * 4 + 1] = 0;
+      buf[i * 4 + 2] = 0;
+    }
+  }
+  return buf;
+}
+
 function resample(rgba, srcW, bgMask, box, size, labelMask, componentId) {
   const out = Buffer.alloc(size * size * 4);
   const sx = box.w / size, sy = box.h / size;
@@ -524,6 +599,8 @@ function main() {
     const cw = Math.min(sq, w), ch = Math.min(sq, h);
 
     const px = resample(rgba, w, bg, { x, y, w: cw, h: ch }, size, lab, f.id);
+    // Remove componentes soltos (pedaços de outros animais que caíram no recorte)
+    keepLargestComponent(px, size, size, 10);
 
     const file = base + '.png';
     manifest.push({ arquivo: file, nome: label_, box: [f.x0, f.y0, f.w, f.h] });
