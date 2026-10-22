@@ -779,6 +779,7 @@ body.exporting .margin-guide { display: none !important; }
 <div class="app-container" id="appContainer">
 
   <header class="header">
+    <button type="button" id="installBtn" class="install-btn" hidden>⬇ Instalar app</button>
     <h1>🌿 Impressao-Biel 🌿</h1>
     <p>crie colagens ecológicas • imprima e salve</p>
   </header>
@@ -3532,6 +3533,26 @@ function init() {
     });
   }
 }
+
+// Botão de instalação PWA (trigger do "salvar como app")
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.hidden = false;
+});
+document.getElementById('installBtn')?.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.getElementById('installBtn').hidden = true;
+});
+window.addEventListener('appinstalled', () => {
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.hidden = true;
+});
 
 init();
 
