@@ -336,9 +336,10 @@ function label(mask, w, h) {
 /* ------------------------- recorte + reamostragem ----------------------- */
 /* Bilinear com alfa PRÉ-MULTIPLICADO: sem franja branca nas bordas quando a
    figura é reduzida. */
-function resample(rgba, srcW, bgMask, box, size) {
+function resample(rgba, srcW, bgMask, box, size, labelMask, componentId) {
   const out = Buffer.alloc(size * size * 4);
   const sx = box.w / size, sy = box.h / size;
+  const srcH = rgba.length / 4 / srcW;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const fx = box.x + (x + 0.5) * sx - 0.5;
@@ -352,8 +353,10 @@ function resample(rgba, srcW, bgMask, box, size) {
           const wy = dy ? fy - y0 : 1 - (fy - y0);
           const wt = wx * wy;
           if (wt <= 0) continue;
-          if (px < 0 || py < 0 || px >= srcW || py >= (rgba.length / 4 / srcW)) continue;
+          if (px < 0 || py < 0 || px >= srcW || py >= srcH) continue;
           const i = py * srcW + px;
+          // Só incluir pixels que pertencem a este componente (evita pedaços de outros animais nos cantos)
+          if (labelMask && labelMask[i] !== componentId) continue;
           const av = bgMask && bgMask[i] ? 0 : rgba[i * 4 + 3] / 255;
           const ww = wt * av;
           r += rgba[i * 4] * ww;
@@ -520,7 +523,7 @@ function main() {
     y = Math.max(0, Math.min(h - sq, y));
     const cw = Math.min(sq, w), ch = Math.min(sq, h);
 
-    const px = resample(rgba, w, bg, { x, y, w: cw, h: ch }, size);
+    const px = resample(rgba, w, bg, { x, y, w: cw, h: ch }, size, lab, f.id);
 
     const file = base + '.png';
     manifest.push({ arquivo: file, nome: label_, box: [f.x0, f.y0, f.w, f.h] });
