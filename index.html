@@ -768,6 +768,8 @@ body.exporting .margin-guide { display: none !important; }
   .crop-handle,
   .item.is-selected::before,
   .item.is-selected::after { display: none !important; }
+  /* remove borda de seleção do item (ex.: foto) na impressão */
+  .item { outline: none !important; }
 }
 
 </style>
