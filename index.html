@@ -704,6 +704,35 @@ body.exporting .margin-guide { display: none !important; }
   }
 }
 
+/* ============================ aviso de atualização ============================ */
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 4000;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #2E7D32;
+  color: #fff;
+  font: 600 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
+.update-banner.show { display: flex; }
+.update-banner button {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #fff;
+  color: #1B5E20;
+  font: 700 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
 /* ============================ impressão ============================ */
 
 @media print {
@@ -730,6 +759,11 @@ body.exporting .margin-guide { display: none !important; }
     <h1>🌿 Impressao-Biel 🌿</h1>
     <p>crie colagens ecológicas • imprima e salve</p>
   </header>
+
+  <div class="update-banner" id="updateBanner">
+    <span>✨ Nova versão disponível</span>
+    <button type="button" id="updateBtn">Atualizar</button>
+  </div>
 
   <main class="main-content" id="mainContent">
     <div class="page-container" id="page">
@@ -3336,7 +3370,34 @@ function init() {
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      // Modo "sempre do zero": abra o app com ?nocache na URL.
+      // Ele desregistra o service worker e apaga todos os caches.
+      if (/[?&]nocache/.test(location.search)) {
+        navigator.serviceWorker.getRegistrations()
+          .then(rs => Promise.all(rs.map(r => r.unregister())))
+          .catch(() => {});
+        if (window.caches) caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).catch(() => {});
+        return;
+      }
+
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener('statechange', () => {
+            // Já existe um SW ativo e o novo ficou instalado esperando:
+            // a página atual é a versão antiga -> oferece atualizar.
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+              const banner = document.getElementById('updateBanner');
+              const btn = document.getElementById('updateBtn');
+              if (banner && btn && !banner.classList.contains('show')) {
+                banner.classList.add('show');
+                btn.addEventListener('click', () => location.reload());
+              }
+            }
+          });
+        });
+      }).catch(() => {});
     });
   }
 }
