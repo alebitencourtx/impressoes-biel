@@ -955,6 +955,7 @@ body.exporting .margin-guide { display: none !important; }
 const MM_TO_PX = 96 / 25.4;
 const EXPORT_DPI = 300;
 const STORAGE_KEY = 'ecoprints:v2';
+const APP_VERSION = 'v11';  // bump junto com CACHE_NAME do sw.js para forcar limpeza de cache
 
 /* ================== figurinhas embutidas em base64 ======================
    Os mapas ficam no fim do <body> (window.OFFLINE_PATCHWORK, window.OFFLINE_*
@@ -3469,6 +3470,28 @@ window.addEventListener('appinstalled', () => {
   const btn = document.getElementById('installBtn');
   if (btn) btn.hidden = true;
 });
+
+// Forca limpeza de cache quando a versao mudou (resolve cache antigo no celular)
+(async function forceCleanInstall() {
+  try {
+    const stored = localStorage.getItem('app_version');
+    if (stored && stored !== APP_VERSION) {
+      // Versao mudou: limpa caches e service workers, depois recarrega
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      localStorage.setItem('app_version', APP_VERSION);
+      window.location.reload();
+      return;
+    }
+    localStorage.setItem('app_version', APP_VERSION);
+  } catch (_) {}
+})();
 
 init();
 
