@@ -40,6 +40,8 @@ html, body {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   background-color: var(--background-color);
   color: var(--text-dark);
@@ -757,7 +759,9 @@ body.exporting .margin-guide { display: none !important; }
   .app-container { padding: 0 !important; height: auto; }
   .main-content { overflow: visible; }
   .page-container {
-    position: static !important;
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
     transform: none !important;
     box-shadow: none !important;
     margin: 0 auto;
@@ -955,7 +959,7 @@ body.exporting .margin-guide { display: none !important; }
 const MM_TO_PX = 96 / 25.4;
 const EXPORT_DPI = 300;
 const STORAGE_KEY = 'ecoprints:v2';
-const APP_VERSION = 'v11';  // bump junto com CACHE_NAME do sw.js para forcar limpeza de cache
+const APP_VERSION = 'v12';  // bump junto com CACHE_NAME do sw.js para forcar limpeza de cache
 
 /* ================== figurinhas embutidas em base64 ======================
    Os mapas ficam no fim do <body> (window.OFFLINE_PATCHWORK, window.OFFLINE_*
@@ -2118,6 +2122,7 @@ function makeItemNode(it) {
 const EMOJI_STACK = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
 const EMOJI_SAFE = 0.98;               // respiro de 2%: a tinta preenche a caixa sem ser cortada
 const emojiMetrics = new Map();       // char -> métricas (proporção de 1em)
+let emojiCanvas = null;
 let emojiMeasureCtx = null;
 
 function measureEmoji(ch) {
@@ -2126,9 +2131,13 @@ function measureEmoji(ch) {
   let m = { inkL: 0, inkR: 1, inkTop: 0.88, inkBottom: 0.12, adv: 1, asc: 0.88, desc: 0.12, exact: false };
   try {
     const REF = 100;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = REF * 4;              // espaço de sobra: o glifo nunca encosta na borda
-    const g = cv.getContext('2d');
+    if (!emojiCanvas) {
+      emojiCanvas = document.createElement('canvas');
+      emojiCanvas.width = emojiCanvas.height = REF * 4;
+    }
+    const cv = emojiCanvas;
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    g.clearRect(0, 0, cv.width, cv.height);
     g.font = `${REF}px ${EMOJI_STACK}`;
     g.textBaseline = 'alphabetic';
     g.textAlign = 'left';
@@ -2146,7 +2155,7 @@ function measureEmoji(ch) {
       }
     }
     if (x1 >= x0 && y1 >= y0) {
-      if (!emojiMeasureCtx) emojiMeasureCtx = document.createElement('canvas').getContext('2d');
+      if (!emojiMeasureCtx) emojiMeasureCtx = cv.getContext('2d');
       emojiMeasureCtx.font = `${REF}px ${EMOJI_STACK}`;
       const t = emojiMeasureCtx.measureText(ch);
       const A = Number.isFinite(t.fontBoundingBoxAscent) ? t.fontBoundingBoxAscent : REF * 0.88;
@@ -2331,14 +2340,26 @@ function handleCropPointerDown(e) {
 
   const handle = e.target.closest('.crop-handle');
   const direction = handle?.dataset.direction || '';
-  const rect = cropEdit.overlay.getBoundingClientRect();
+  const it = findItem(cropEdit.id);
+  const rotRad = ((it?.rot || 0) * Math.PI) / 180;
+  const cos = Math.cos(rotRad);
+  const sin = Math.sin(rotRad);
+  const itemWpx = (it ? it.w : 10) * MM_TO_PX * displayScale;
+  const itemHpx = (it ? it.h : 10) * MM_TO_PX * displayScale;
   const start = { ...cropEdit.value };
   const movingBox = !direction;
+  const mirrored = !!it?.flipX;
+  const pointerId = e.pointerId;
 
   const onMove = (moveEvent) => {
-    const mirrored = !!findItem(cropEdit.id)?.flipX;
-    const dx = (moveEvent.clientX - e.clientX) / rect.width * 100 * (mirrored ? -1 : 1);
-    const dy = (moveEvent.clientY - e.clientY) / rect.height * 100;
+    if (moveEvent.pointerId !== pointerId) return;
+    const rawDx = moveEvent.clientX - e.clientX;
+    const rawDy = moveEvent.clientY - e.clientY;
+    // Projeta o movimento da tela no sistema de coordenadas rotacionado da foto
+    const lx = rawDx * cos + rawDy * sin;
+    const ly = -rawDx * sin + rawDy * cos;
+    const dx = (lx / (itemWpx || 1)) * 100 * (mirrored ? -1 : 1);
+    const dy = (ly / (itemHpx || 1)) * 100;
     const next = { ...start };
 
     if (movingBox) {
@@ -2358,7 +2379,8 @@ function handleCropPointerDown(e) {
     cropEdit.value = next;
     cropBoxStyle(cropEdit.box, next);
   };
-  const onUp = () => {
+  const onUp = (upEvent) => {
+    if (upEvent && upEvent.pointerId !== pointerId) return;
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     document.removeEventListener('pointercancel', onUp);
@@ -2518,7 +2540,8 @@ function handleAt(node, clientX, clientY) {
   // Item não selecionado: o primeiro toque só seleciona/move, nunca redimensiona.
   if (!node.classList.contains('is-selected')) return null;
   const nr = node.getBoundingClientRect();
-  const hit = Math.min(30, Math.max(16, Math.min(nr.width, nr.height) / 3));
+  // No mobile, raio mínimo de 26px garante que dedos consigam acionar as alças com facilidade
+  const hit = Math.min(36, Math.max(26, Math.min(nr.width, nr.height) / 3));
   let best = null;
   let bestDist = Infinity;
   node.querySelectorAll('.item__handle').forEach((h) => {
@@ -2633,6 +2656,7 @@ el.page.addEventListener('pointerdown', (e) => {
   const startAngle = center ? Math.atan2(e.clientY - center.y, e.clientX - center.x) : null;
 
   drag = {
+    pointerId: e.pointerId,
     it,
     node,
     mode: isRotHandle ? 'rotate' : (handle ? 'resize' : 'move'),
@@ -2649,7 +2673,7 @@ el.page.addEventListener('pointerdown', (e) => {
 });
 
 window.addEventListener('pointermove', (e) => {
-  if (!drag) return;
+  if (!drag || (drag.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
 
   const dxPx = e.clientX - drag.startX;
   const dyPx = e.clientY - drag.startY;
@@ -2719,14 +2743,16 @@ window.addEventListener('pointermove', (e) => {
   paintGeometry(drag.node, it);
 });
 
-window.addEventListener('pointerup', () => {
-  if (!drag) return;
+window.addEventListener('pointerup', (e) => {
+  if (!drag || (drag.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
+  try { el.page.releasePointerCapture?.(e.pointerId); } catch (_) {}
   drag = null;
   hideRotationGuide();
   save();
 });
-window.addEventListener('pointercancel', () => {
-  if (!drag) return;
+window.addEventListener('pointercancel', (e) => {
+  if (!drag || (drag.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
+  try { el.page.releasePointerCapture?.(e.pointerId); } catch (_) {}
   drag = null;
   hideRotationGuide();
   save();
@@ -2763,51 +2789,48 @@ const PHOTO_MAX_PX = 1600;
 const PHOTO_QUALITY = 0.86;
 
 async function downscalePhoto(file) {
-  const original = await readAsDataURL(file);
-  if (!file.type.startsWith('image/') || file.type === 'image/gif') return original;
+  if (!file || !file.type || !file.type.startsWith('image/')) return null;
 
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const im = new Image();
-      im.onload = () => resolve(im);
-      im.onerror = reject;
-      im.src = original;
-    });
-
-    const maior = Math.max(img.naturalWidth, img.naturalHeight);
-    const escala = maior > PHOTO_MAX_PX ? PHOTO_MAX_PX / maior : 1;
-
-    // Pequena e já comprimida: não vale a pena recomprimir (perde qualidade).
-    if (escala === 1 && original.length <= 600 * 1024) return original;
-
-    const w = Math.max(1, Math.round(img.naturalWidth * escala));
-    const h = Math.max(1, Math.round(img.naturalHeight * escala));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, 0, 0, w, h);
-
-    // PNG com transparência vira PNG (sem alfa o JPEG pintaria de preto).
-    const temAlfa = file.type === 'image/png' || file.type === 'image/webp';
-    const out = temAlfa
-      ? canvas.toDataURL('image/png')
-      : canvas.toDataURL('image/jpeg', PHOTO_QUALITY);
-
-    return out.length < original.length ? out : original;
-  } catch (_) {
-    return original;   // qualquer falha: mantém o original
-  }
-}
-
-/* Largura / altura real da imagem, para a foto caber inteira na célula. */
-function imageAspect(src) {
   return new Promise((resolve) => {
+    // URL.createObjectURL não carrega string base64 pesada na memória RAM do celular
+    const blobUrl = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => resolve(img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1);
-    img.onerror = () => resolve(1);
-    img.src = src;
+    img.onload = () => {
+      URL.revokeObjectURL(blobUrl);
+      try {
+        const ar = (img.naturalWidth && img.naturalHeight) ? img.naturalWidth / img.naturalHeight : 1;
+        if (file.type === 'image/gif') {
+          readAsDataURL(file).then(src => resolve({ src, ar })).catch(() => resolve(null));
+          return;
+        }
+
+        const maior = Math.max(img.naturalWidth, img.naturalHeight);
+        const escala = maior > PHOTO_MAX_PX ? PHOTO_MAX_PX / maior : 1;
+
+        const w = Math.max(1, Math.round(img.naturalWidth * escala));
+        const h = Math.max(1, Math.round(img.naturalHeight * escala));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const temAlfa = file.type === 'image/png' || file.type === 'image/webp';
+        const out = temAlfa
+          ? canvas.toDataURL('image/png')
+          : canvas.toDataURL('image/jpeg', PHOTO_QUALITY);
+
+        resolve({ src: out, ar });
+      } catch (_) {
+        readAsDataURL(file).then(src => resolve({ src, ar: 1 })).catch(() => resolve(null));
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(blobUrl);
+      readAsDataURL(file).then(src => resolve({ src, ar: 1 })).catch(() => resolve(null));
+    };
+    img.src = blobUrl;
   });
 }
 
@@ -2817,24 +2840,29 @@ async function addPhotos(files) {
 
   showOverlay('Carregando fotos…');
   try {
-    const srcs = await Promise.all(list.map(downscalePhoto));
-    const ars = await Promise.all(srcs.map(imageAspect));
+    // Processamento sequencial para não estourar a memória RAM (OOM) no celular
+    const results = [];
+    for (const file of list) {
+      const res = await downscalePhoto(file);
+      if (res && res.src) results.push(res);
+    }
+    if (!results.length) return;
+
     const p = pageDims();
     const base = Math.min(p.w, p.h) * 0.45;
     const m = safeMarginMM();
 
-    srcs.forEach((src, i) => {
-      const ar = ars[i] || 1;
+    results.forEach(({ src, ar }) => {
       state.items.push({
         id: newId(),
         type: 'photo',
         src,
-        ar,
+        ar: ar || 1,
         flipX: false,
         x: m,
         y: m,
         w: round2(base),
-        h: round2(base / ar),
+        h: round2(base / (ar || 1)),
         rot: 0,
         border: 0,
         borderColor: '#2E7D32',
@@ -3004,27 +3032,53 @@ function duplicateSelected() {
 let saveTimer = null;
 let cotaAvisada = false;
 
+const IDB_NAME = 'ecoprints_db';
+const IDB_STORE = 'projects';
+const IDB_KEY = 'current_project';
+
+function getIDB() {
+  return new Promise((resolve) => {
+    if (!window.indexedDB) return resolve(null);
+    try {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushSave, 400);
 }
 
-/* Grava agora (usado também ao sair da página, para não perder o que estava
-   pendente no debounce). Se a cota estourar, avisa UMA vez: antes o erro era
-   engolido e a pessoa só descobria no reload, com o trabalho perdido. */
-function flushSave() {
+/* Grava agora no IndexedDB (sem teto de 5 MB) e sincroniza no localStorage quando couber */
+async function flushSave() {
   clearTimeout(saveTimer);
   saveTimer = null;
+
+  // 1. Salva de forma garantida no IndexedDB
+  try {
+    const db = await getIDB();
+    if (db) {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(JSON.stringify(state), IDB_KEY);
+    }
+  } catch (_) {}
+
+  // 2. Salva no localStorage como reserva imediata se houver espaço
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (err) {
-    if (cotaAvisada) return;
-    cotaAvisada = true;
-    alert(
-      'O navegador não tem mais espaço para salvar automaticamente este projeto.\n\n' +
-      'Exporte o que precisa agora. Para liberar espaço, remova fotos do projeto ' +
-      'ou feche outras abas do navegador.'
-    );
+  } catch (_) {
+    // Ignora estouro de cota do localStorage, pois os dados estão persistidos com segurança no IndexedDB
   }
 }
 
@@ -3034,32 +3088,56 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushSave();
 });
 
+function applyLoadedData(data) {
+  if (!data || !Array.isArray(data.items)) return false;
+  state.pageSize = PAGE_SIZES[data.pageSize] ? data.pageSize : 'a4';
+  state.bg = { ...state.bg, ...(data.bg || {}) };
+  state.items = data.items.map((it, i) => ({ ...it, hidden: false, z: it.z || i + 1 }));
+  state.items.forEach((it) => {
+    if (it.type === 'sticker' && !it.src) {
+      delete it.fsRatio;
+      delete it.fu;
+      delete it.fontSize;
+    }
+  });
+  state.items.forEach(applySafeLayout);
+  state.seq = data.seq || data.items.length;
+  state.selectedId = null;
+  return true;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const data = JSON.parse(raw);
-    if (!data || !Array.isArray(data.items)) return false;
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (applyLoadedData(data)) return true;
+    }
+  } catch (_) {}
+  return false;
+}
 
-    state.pageSize = PAGE_SIZES[data.pageSize] ? data.pageSize : 'a4';
-    state.bg = { ...state.bg, ...(data.bg || {}) };
-    state.items = data.items.map((it, i) => ({ ...it, hidden: false, z: it.z || i + 1 }));
-    // O tamanho do emoji agora vem da caixa (w/h): descarta os campos antigos
-    // de fonte para ele já aparecer preenchendo o quadrado como a figurinha.
-    state.items.forEach((it) => {
-      if (it.type === 'sticker' && !it.src) {
-        delete it.fsRatio;
-        delete it.fu;
-        delete it.fontSize;
-      }
+// Hidratação a partir do IndexedDB caso o localStorage tenha sido limpo ou estourado
+async function hydrateFromIndexedDB() {
+  try {
+    const db = await getIDB();
+    if (!db) return;
+    const raw = await new Promise((resolve) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
     });
-    state.items.forEach(applySafeLayout);   // estados antigos também respeitam a trava
-    state.seq = data.seq || data.items.length;
-    state.selectedId = null;
-    return true;
-  } catch (_) {
-    return false;
-  }
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data && Array.isArray(data.items) && data.items.length > state.items.length) {
+      if (applyLoadedData(data)) {
+        el.pageSize.value = state.pageSize;
+        layoutPage();
+        renderAll();
+      }
+    }
+  } catch (_) {}
 }
 
 /* ============================ export ============================ */
@@ -3128,12 +3206,25 @@ async function saveImage() {
 
     if (nativeSave(b64, name)) return;
 
+    // Converte base64 para Blob para criar um download direto no mobile sem limite de tamanho de URL
+    const byteCharacters = atob(b64);
+    const byteNumbers = new Uint8Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const blob = new Blob([byteNumbers], { type: 'image/jpeg' });
+    const blobUrl = URL.createObjectURL(blob);
+
     const a = document.createElement('a');
-    a.href = 'data:image/jpeg;base64,' + b64;
+    a.href = blobUrl;
     a.download = name + '.jpg';
     document.body.appendChild(a);
     a.click();
-    a.remove();
+
+    setTimeout(() => {
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    }, 2000);
   } catch (err) {
     console.error(err);
     alert('Não foi possível gerar a imagem.');
@@ -3145,8 +3236,19 @@ async function saveImage() {
 async function printPage() {
   showOverlay('Preparando a impressão…');
   try {
-    // Usa impressão nativa do navegador (usa CSS @media print já configurado)
+    if (window.AndroidPrint && typeof window.AndroidPrint.printImage === 'function') {
+      const b64 = await exportBase64(0.92);
+      if (nativePrint(b64, `eco-print-${state.pageSize}-${Date.now()}`)) return;
+    }
+    // Desmarca seleção visual temporariamente para não imprimir caixas de foco ou alças
+    const prevSelected = state.selectedId;
+    state.selectedId = null;
+    markSelected();
+
     window.print();
+
+    state.selectedId = prevSelected;
+    markSelected();
   } catch (err) {
     console.error(err);
     alert('Não foi possível preparar a impressão.');
@@ -3297,7 +3399,7 @@ function bindControls() {
       if (blobs.length) addPhotos(blobs);
       else alert('Nenhuma imagem encontrada na área de transferência.');
     } catch (_) {
-      alert('O acesso à área de transferência está bloqueado. Use Ctrl+V ou Adicionar Fotos.');
+      alert('O acesso à área de transferência está bloqueado pelo navegador. Use o botão Adicionar Fotos.');
     }
   });
 
@@ -3414,6 +3516,8 @@ function init() {
   /* Itens salvos com figurinha do Patchwork pintam sem imagem até o blob
      chegar (ele vem depois do app no HTML); repinta quando estiver pronto. */
   onFigurinhasReady(() => { renderAll(); });
+
+  hydrateFromIndexedDB();
 
   if (!restored) setTool('add');
 
