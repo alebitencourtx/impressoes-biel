@@ -59,6 +59,7 @@ html, body {
 .app-container.controls-collapsed { padding-bottom: 42px; }
 
 .header {
+  position: relative;
   background-color: var(--primary-color);
   color: #fff;
   padding: calc(10px + env(safe-area-inset-top)) 15px 10px;
@@ -66,6 +67,15 @@ html, body {
   flex-shrink: 0;
   z-index: 100;
   border-bottom: 3px solid var(--secondary-color);
+}
+.header-version {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  right: 12px;
+  font-size: .68rem;
+  font-weight: 600;
+  opacity: .8;
+  letter-spacing: .5px;
 }
 .header h1 {
   font-size: 1.3rem;
@@ -784,6 +794,7 @@ body.exporting .margin-guide { display: none !important; }
 
   <header class="header">
     <button type="button" id="installBtn" class="install-btn" hidden>⬇ Instalar app</button>
+    <span class="header-version">v13</span>
     <h1>🌿 Impressao-Biel 🌿</h1>
     <p>crie colagens ecológicas • imprima e salve</p>
   </header>
@@ -959,7 +970,7 @@ body.exporting .margin-guide { display: none !important; }
 const MM_TO_PX = 96 / 25.4;
 const EXPORT_DPI = 300;
 const STORAGE_KEY = 'ecoprints:v2';
-const APP_VERSION = 'v12';  // bump junto com CACHE_NAME do sw.js para forcar limpeza de cache
+const APP_VERSION = 'v13';  // bump junto com CACHE_NAME do sw.js para forcar limpeza de cache
 
 /* ================== figurinhas embutidas em base64 ======================
    Os mapas ficam no fim do <body> (window.OFFLINE_PATCHWORK, window.OFFLINE_*
